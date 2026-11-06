@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>RocketSim — Spaceflight Simulator</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Segoe UI',Arial,sans-serif;color:#e0e0e0}
+canvas{display:block;position:absolute;top:0;left:0}
+
+/* ===== ТЕЛЕМЕТРИЯ В СТИЛЕ SFS ===== */
+#hud{position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.75);border:1px solid #3a5a8a;border-radius:4px;padding:8px 12px;font-family:'Consolas',monospace;font-size:13px;min-width:220px;pointer-events:none}
+#hud h4{color:#6ab4ff;margin-bottom:6px;font-size:12px;letter-spacing:1px;border-bottom:1px solid #3a5a8a;padding-bottom:3px}
+.hud-row{display:flex;justify-content:space-between;margin:3px 0}
+.hud-label{color:#8899aa}
+.hud-val{color:#fff;font-weight:bold}
+.hud-val.warn{color:#ffaa44}
+.hud-val.danger{color:#ff4444}
+.hud-val.ok{color:#44ff88}
+
+/* ===== УПРАВЛЕНИЕ ВРЕМЕНЕМ ===== */
+#time-controls{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:4px;background:rgba(0,0,0,0.75);padding:6px;border-radius:4px;border:1px solid #3a5a8a}
+.time-btn{background:#1a2a3a;color:#6ab4ff;border:1px solid #3a5a8a;padding:6px 12px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:3px}
+.time-btn:hover{background:#2a4a6a}
+.time-btn.active{background:#6ab4ff;color:#000;font-weight:bold}
+
+/* ===== КНОПКИ ДЕЙСТВИЙ ===== */
+#actions{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:8px;background:rgba(0,0,0,0.75);padding:8px;border-radius:4px;border:1px solid #3a5a8a}
+.act-btn{background:#1a2a3a;color:#fff;border:1px solid #3a5a8a;padding:8px 16px;cursor:pointer;border-radius:3px;font-size:13px}
+.act-btn:hover{background:#2a4a6a}
+.act-btn.primary{background:#2a6aaa;border-color:#4a8aca}
+.act-btn.primary:hover{background:#3a8aca}
+.act-btn.danger{background:#6a2a2a;border-color:#8a4a4a}
+
+/* ===== ПОЛЗУНОК ТЯГИ ===== */
+#throttle-box{position:absolute;bottom:80px;right:10px;background:rgba(0,0,0,0.75);border:1px solid #3a5a8a;border-radius:4px;padding:10px;width:60px}
+#throttle-box label{display:block;font-size:10px;color:#6ab4ff;text-align:center;margin-bottom:5px}
+#throttle-slider{writing-mode:bt-lr;-webkit-appearance:slider-vertical;width:40px;height:150px;margin:0 auto;display:block}
+#throttle-pct{text-align:center;font-family:monospace;font-size:14px;color:#fff;margin-top:5px}
+
+/* ===== МОБИЛЬНЫЕ КНОПКИ ===== */
+#mobile-pad{position:absolute;bottom:20px;left:20px;display:none;gap:8px}
+.m-btn{width:60px;height:60px;border-radius:50%;background:rgba(42,106,170,0.4);border:2px solid #4a8aca;color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;touch-action:none}
+.m-btn:active{background:rgba(42,106,170,0.8)}
+.m-btn.fire{background:rgba(170,42,42,0.4);border-color:#ca4a4a}
+.m-btn.fire:active{background:rgba(170,42,42,0.8)}
+
+/* ===== МЕНЮ КОНСТРУКТОРА ===== */
+#builder{position:absolute;top:0;left:0;width:100%;height:100%;background:#0a0e1a;z-index:100;display:flex;flex-direction:column}
+#builder.hidden{display:none}
+#builder-header{background:#111828;padding:12px 20px;border-bottom:1px solid #2a3a5a;display:flex;justify-content:space-between;align-items:center}
+#builder-header h1{color:#6ab4ff;font-size:20px}
+#builder-main{flex:1;display:flex;overflow:hidden}
+#parts-panel{width:320px;background:#0d1420;border-right:1px solid #2a3a5a;overflow-y:auto;padding:10px}
+.part-cat{margin-bottom:15px}
+.part-cat h3{color:#6ab4ff;font-size:13px;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px}
+.part-item{background:#152030;border:1px solid #2a3a5a;padding:10px;margin-bottom:5px;border-radius:3px;cursor:pointer;transition:all 0.15s}
+.part-item:hover{background:#1e3050;border-color:#4a8aca}
+.part-item .pname{font-weight:bold;font-size:13px}
+.part-item .pstats{font-size:11px;color:#8899aa;margin-top:3px;font-family:monospace}
+#rocket-view{flex:1;position:relative;background:radial-gradient(ellipse at center,#0a1525 0%,#000 100%)}
+#rocket-canvas{width:100%;height:100%;display:block}
+#builder-stats{position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,0.8);border:1px solid #3a5a8a;padding:10px;border-radius:4px;font-family:monospace;font-size:12px}
+#builder-stats div{margin:2px 0}
+#builder-actions{position:absolute;bottom:10px;right:10px;display:flex;gap:8px}
+
+/* ===== СООБЩЕНИЯ ===== */
+#toast{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);border:2px solid #6ab4ff;padding:20px 40px;border-radius:6px;font-size:18px;text-align:center;display:none;z-index:200}
+#toast.fail{border-color:#ff4444}
+#toast.ok{border-color:#44ff88}
+
+@media(max-width:768px){
+  #parts-panel{width:100%;position:absolute;z-index:50;max-height:50%}
+  #mobile-pad{display:flex}
+  #hud{font-size:11px;min-width:180px}
+}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- HUD ТЕЛЕМЕТРИЯ -->
+<div id="hud" style="display:none">
+  <h4>📡 ОРБИТА</h4>
+  <div class="hud-row"><span class="hud-label">Alt:</span><span class="hud-val" id="h-alt">0 м</span></div>
+  <div class="hud-row"><span class="hud-label">Vel:</span><span class="hud-val" id="h-vel">0 м/с</span></div>
+  <div class="hud-row"><span class="hud-label">Ap:</span><span class="hud-val" id="h-ap">—</span></div>
+  <div class="hud-row"><span class="hud-label">Pe:</span><span class="hud-val" id="h-pe">—</span></div>
+  <h4 style="margin-top:8px">🚀 РАКЕТА</h4>
+  <div class="hud-row"><span class="hud-label">TWR:</span><span class="hud-val" id="h-twr">0</span></div>
+  <div class="hud-row"><span class="hud-label">Mass:</span><span class="hud-val" id="h-mass">0 кг</span></div>
+  <div class="hud-row"><span class="hud-label">Fuel:</span><span class="hud-val" id="h-fuel">0%</span></div>
+  <div class="hud-row"><span class="hud-label">Δv:</span><span class="hud-val" id="h-dv">0 м/с</span></div>
+  <div class="hud-row"><span class="hud-label">G:</span><span class="hud-val" id="h-g">0</span></div>
+  <div class="hud-row"><span class="hud-label">Stage:</span><span class="hud-val" id="h-stage">1</span></div>
+</div>
+
+<!-- УПРАВЛЕНИЕ ВРЕМЕНЕМ -->
+<div id="time-controls" style="display:none">
+  <button class="time-btn" onclick="setTime(0)">⏸</button>
+  <button class="time-btn active" onclick="setTime(1)">1×</button>
+  <button class="time-btn" onclick="setTime(2)">2×</button>
+  <button class="time-btn" onclick="setTime(5)">5×</button>
+  <button class="time-btn" onclick="setTime(10)">10×</button>
+  <button class="time-btn" onclick="setTime(50)">50×</button>
+  <button class="time-btn" onclick="setTime(100)">100×</button>
+</div>
+
+<!-- КНОПКИ ДЕЙСТВИЙ -->
+<div id="actions" style="display:none">
+  <button class="act-btn danger" onclick="abortFlight()">✖ АВАРИЙНЫЙ СБРОС</button>
+  <button class="act-btn" onclick="deployParachute()">🪂 ПАРАШЮТ</button>
+  <button class="act-btn primary" onclick="nextStage()">⬆ СЛЕД. СТУПЕНЬ (Space)</button>
+  <button class="act-btn" onclick="showBuilder()">🔧 КОНСТРУКТОР</button>
+</div>
+
+<!-- ПОЛЗУНОК ТЯГИ -->
+<div id="throttle-box" style="display:none">
+  <label>ТЯГА</label>
+  <input type="range" id="throttle-slider" min="0" max="100" value="100" orient="vertical">
+  <div id="throttle-pct">100%</div>
+</div>
+
+<!-- МОБИЛЬНОЕ УПРАВЛЕНИЕ -->
+<div id="mobile-pad">
+  <div class="m-btn" id="m-left">◀</div>
+  <div class="m-btn fire" id="m-fire">🔥</div>
+  <div class="m-btn" id="m-right">▶</div>
+</div>
+
+<!-- КОНСТРУКТОР -->
+<div id="builder">
+  <div id="builder-header">
+    <h1>🚀 ROCKET BUILDER</h1>
+    <button class="act-btn primary" onclick="launchRocket()">🚀 ЗАПУСК</button>
+  </div>
+  <div id="builder-main">
+    <div id="parts-panel">
+      <div class="part-cat">
+        <h3>🔴 НОСОВЫЕ ОБТЕКАТЕЛИ</h3>
+        <div class="part-item" onclick="addPart('nose_small')"><div class="pname">Нос S</div><div class="pstats">Масса: 50 кг | Высота: 2 м</div></div>
+        <div class="part-item" onclick="addPart('nose_large')"><div class="pname">Нос L</div><div class="pstats">Масса: 120 кг | Высота: 3 м</div></div>
+      </div>
+      <div class="part-cat">
+        <h3>🔵 ТОПЛИВНЫЕ БАКИ</h3>
+        <div class="part-item" onclick="addPart('tank_s')"><div class="pname">Бак FL-T100</div><div class="pstats">Сух: 100 кг | Топливо: 800 кг | 3 м</div></div>
+        <div class="part-item" onclick="addPart('tank_m')"><div class="pname">Бак FL-T400</div><div class="pstats">Сух: 300 кг | Топливо: 3200 кг | 6 м</div></div>
+        <div class="part-item" onclick="addPart('tank_l')"><div class="pname">Бак FL-T800</div><div class="pstats">Сух: 600 кг | Топливо: 6400 кг | 10 м</div></div>
+      </div>
+      <div class="part-cat">
+        <h3>🟠 ДВИГАТЕЛИ</h3>
+        <div class="part-item" onclick="addPart('eng_small')"><div class="pname">"Искра" LV-1</div><div class="pstats">Масса: 150 кг | Тяга: 30 кН | Isp: 280 с</div></div>
+        <div class="part-item" onclick="addPart('eng_med')"><div class="pname">"Тайфун" LV-2</div><div class="pstats">Масса: 500 кг | Тяга: 120 кН | Isp: 310 с</div></div>
+        <div class="part-item" onclick="addPart('eng_big')"><div class="pname">"Титан" LV-3</div><div class="pstats">Масса: 1500 кг | Тяга: 400 кН | Isp: 330 с</div></div>
+      </div>
+      <div class="part-cat">
+        <h3>⚪ ПАРАШЮТ</h3>
+        <div class="part-item" onclick="addPart('parachute')"><div class="pname">Парашют MK-1</div><div class="pstats">Масса: 80 кг | Раскр. на: &lt;500 м</div></div>
+      </div>
+    </div>
+    <div id="rocket-view">
+      <canvas id="rocket-canvas"></canvas>
+      <div id="builder-stats">
+        <div>Деталей: <span id="bs-count">0</span></div>
+        <div>Высота: <span id="bs-height">0</span> м</div>
+        <div>Масса: <span id="bs-mass">0</span> кг</div>
+        <div>Тяга: <span id="bs-thrust">0</span> кН</div>
+        <div>TWR: <span id="bs-twr">0</span></div>
+        <div>Δv: <span id="bs-dv">0</span> м/с</div>
+      </div>
+      <div id="builder-actions">
+        <button class="act-btn danger" onclick="clearBuilder()">🗑 ОЧИСТИТЬ</button>
+        <button class="act-btn" onclick="removeLast()">↶ УДАЛИТЬ ПОСЛ.</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ============================================================
+//  ROCKETSIM — полноценный симулятор в стиле Spaceflight Simulator
+//  Реальная физика: гравитация Ньютона, атмосфера, орбиты
+// ============================================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+// ===== РЕАЛЬНЫЕ ФИЗИЧЕСКИЕ КОНСТАНТЫ =====
+// Масштаб: 1 пиксель = 100 метров (динамически)
+const G_CONST = 6.674e-11; // гравитационная постоянная (реальная)
+// Для игровых расчётов используем упрощённые значения, но пропорции реальные
+
+const EARTH = {
+  name: 'Земля',
+  mass: 5.972e24,      // кг (реальная)
+  radius: 6371000,     // м (реальный)
+  color: '#2266cc',
+  atmosphere: 100000,  // м
+  g0: 9.80665
+};
+
+const MOON = {
+  name: 'Луна',
+  mass: 7.342e22,
+  radius: 1737400,
+  color: '#aaaaaa',
+  atmosphere: 0,
+  distance: 384400000  // м от Земли
+};
+
+// ===== ДЕТАЛИ =====
+const PARTS = {
+  nose_small:  {name:'Нос S',     mass:50,    height:2,   width:1.2, type:'nose',  color:'#cc3333'},
+  nose_large:  {name:'Нос L',     mass:120,   height:3,   width:1.6, type:'nose',  color:'#aa2222'},
+  tank_s:      {name:'FL-T100',   mass:100,   fuel:800,   height:3,   width:1.4, type:'tank',  color:'#ccccdd'},
+  tank_m:      {name:'FL-T400',   mass:300,   fuel:3200,  height:6,   width:1.6, type:'tank',  color:'#bbbccc'},
+  tank_l:      {name:'FL-T800',   mass:600,   fuel:6400,  height:10,  width:1.8, type:'tank',  color:'#aabbcc'},
+  eng_small:   {name:'LV-1 Искра',mass:150,   thrust:30000,  isp:280, height:2, width:1.4, type:'engine', color:'#444455'},
+  eng_med:     {name:'LV-2 Тайфун',mass:500,  thrust:120000, isp:310, height:3, width:1.8, type:'engine', color:'#333344'},
+  eng_big:     {name:'LV-3 Титан',mass:1500,  thrust:400000, isp:330, height:4, width:2.2, type:'engine', color:'#222233'},
+  parachute:   {name:'Парашют',   mass:80,    height:0.5, width:1.2, type:'chute', color:'#ffffff'}
+};
+
+// ===== СОСТОЯНИЕ =====
+let builderParts = [];
+let rocket = null;
+let camera = {x:0, y:0, zoom:1e-6}; // зум в пикселях на метр
+let keys = {};
+let throttle = 100;
+let timeScale = 1;
+let flightActive = false;
+let parachuteDeployed = false;
+let stars = [];
+
+// Генерация звёзд
+for(let i=0;i<800;i++){
+  stars.push({
+    x:(Math.random()-0.5)*2e9,
+    y:(Math.random()-0.5)*2e9,
+    size:Math.random()*1.5+0.5,
+    brightness:Math.random()
+  });
+}
+
+// ===== УТИЛИТЫ =====
+function resize(){
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function toast(msg, type=''){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = type;
+  t.style.display = 'block';
+  setTimeout(()=>t.style.display='none', 2500);
+}
+
+// ===== КОНСТРУКТОР =====
+function addPart(id){
+  const p = {...PARTS[id], id:Math.random()};
+  if(p.type==='engine') builderParts.unshift(p);
+  else if(p.type==='nose' || p.type==='chute') builderParts.push(p);
+  else {
+    const engIdx = builderParts.findIndex(x=>x.type==='engine');
+    builderParts.splice(engIdx>=0?engIdx:0, 0, p);
+  }
+  updateBuilderStats();
+  drawBuilderRocket();
+}
+
+function removeLast(){
+  if(builderParts.length){
+    builderParts.pop();
+    updateBuilderStats();
+    drawBuilderRocket();
+  }
+}
+
+function clearBuilder(){
+  builderParts = [];
+  updateBuilderStats();
+  drawBuilderRocket();
+}
+
+function updateBuilderStats(){
+  let mass=0, fuel=0, thrust=0, height=0;
+  builderParts.forEach(p=>{
+    mass += p.mass + (p.fuel||0);
+    fuel += p.fuel||0;
+    if(p.thrust) thrust += p.thrust;
+    height += p.height;
+  });
+  const twr = mass>0 ? thrust/(mass*EARTH.g0) : 0;
+  // Формула Циолковского для Δv
+  const dryMass = mass - fuel;
+  const dv = fuel>0 && dryMass>0 ? 310 * 9.81 * Math.log(mass/dryMass) : 0;
+  
+  document.getElementById('bs-count').textContent = builderParts.length;
+  document.getElementById('bs-height').textContent = height.toFixed(1);
+  document.getElementById('bs-mass').textContent = mass.toFixed(0);
+  document.getElementById('bs-thrust').textContent = (thrust/1000).toFixed(1);
+  document.getElementById('bs-twr').textContent = twr.toFixed(2);
+  document.getElementById('bs-dv').textContent = dv.toFixed(0);
+}
+
+function drawBuilderRocket(){
+  const c = document.getElementById('rocket-canvas');
+  const cx = c.getContext('2d');
+  c.width = c.offsetWidth;
+  c.height = c.offsetHeight;
+  cx.clearRect(0,0,c.width,c.height);
+  
+  if(!builderParts.length){
+    cx.fillStyle='#556';
+    cx.font='18px Arial';
+    cx.textAlign='center';
+    cx.fillText('Добавь детали слева', c.width/2, c.height/2);
+    return;
+  }
+  
+  // Масштаб для отображения
+  const totalH = builderParts.reduce((s,p)=>s+p.height, 0);
+  const scale = Math.min(c.height*0.8 / totalH, 40); // пикселей на метр
+  const cxPos = c.width/2;
+  let y = c.height - 30;
+  
+  builderParts.forEach(p=>{
+    const w = p.width * scale;
+    const h = p.height * scale;
+    const x = cxPos - w/2;
+    
+    if(p.type==='nose'){
+      cx.fillStyle = p.color;
+      cx.beginPath();
+      cx.moveTo(x, y);
+      cx.lineTo(cxPos, y-h);
+      cx.lineTo(x+w, y);
+      cx.closePath();
+      cx.fill();
+      cx.strokeStyle='#fff';
+      cx.lineWidth=1;
+      cx.stroke();
+    } else if(p.type==='engine'){
+      cx.fillStyle = p.color;
+      cx.fillRect(x, y-h, w, h);
+      cx.strokeStyle='#fff';
+      cx.strokeRect(x, y-h, w, h);
+      // Сопло
+      cx.fillStyle='#111';
+      cx.beginPath();
+      cx.moveTo(cxPos-w*0.3, y);
+      cx.lineTo(cxPos, y+h*0.4);
+      cx.lineTo(cxPos+w*0.3, y);
+      cx.closePath();
+      cx.fill();
+    } else if(p.type==='chute'){
+      cx.fillStyle = p.color;
+      cx.beginPath();
+      cx.arc(cxPos, y-h/2, w/2, 0, Math.PI*2);
+      cx.fill();
+      cx.strokeStyle='#888';
+      cx.stroke();
+    } else {
+      // Бак
+      cx.fillStyle = p.color;
+      cx.fillRect(x, y-h, w, h);
+      cx.strokeStyle='#888';
+      cx.strokeRect(x, y-h, w, h);
+      // Уровень топлива
+      if(p.fuel){
+        const ratio = p.fuel / (PARTS[p.id] ? PARTS[p.id].fuel || 1 : 1);
+        // Для простоты — полный бак в конструкторе
+        cx.fillStyle='rgba(68,136,204,0.5)';
+        cx.fillRect(x+2, y-h+2, w-4, h-4);
+      }
+    }
+    y -= h;
+  });
+}
+
+// ===== ЗАПУСК =====
+function launchRocket(){
+  if(!builderParts.length){toast('Собери ракету!','fail');return;}
+  if(!builderParts.some(p=>p.type==='engine')){toast('Нужен двигатель!','fail');return;}
+  if(!builderParts.some(p=>p.type==='nose')){toast('Нужен обтекатель!','fail');return;}
+  
+  // Создаём ракету на поверхности Земли
+  rocket = {
+    parts: JSON.parse(JSON.stringify(builderParts)),
+    x: 0,
+    y: EARTH.radius + 10, // на поверхности
+    vx: 0,
+    vy: 0,
+    angle: Math.PI/2, // вверх
+    angularVel: 0,
+    mass: 0,
+    alive: true,
+    stage: 1,
+    maxAlt: 0,
+    gForce: 1
+  };
+  
+  // Начальная масса
+  rocket.mass = rocket.parts.reduce((s,p)=>s+p.mass+(p.fuel||0),0);
+  
+  camera.x = rocket.x;
+  camera.y = rocket.y;
+  camera.zoom = 1.5e-5; // начальный зум — видно ракету и часть Земли
+  
+  parachuteDeployed = false;
+  timeScale = 1;
+  
+  document.getElementById('builder').classList.add('hidden');
+  document.getElementById('hud').style.display='block';
+  document.getElementById('time-controls').style.display='flex';
+  document.getElementById('actions').style.display='flex';
+  document.getElementById('throttle-box').style.display='block';
+  
+  flightActive = true;
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+  
+  toast('🚀 ЗАПУСК!','ok');
+}
+
+function showBuilder(){
+  flightActive = false;
+  document.getElementById('builder').classList.remove('hidden');
+  document.getElementById('hud').style.display='none';
+  document.getElementById('time-controls').style.display='none';
+  document.getElementById('actions').style.display='none';
+  document.getElementById('throttle-box').style.display='none';
+  drawBuilderRocket();
+}
+
+function abortFlight(){
+  if(rocket) rocket.alive = false;
+  toast('💥 АВАРИЙНЫЙ СБРОС','fail');
+  setTimeout(showBuilder, 1500);
+}
+
+function deployParachute(){
+  if(!rocket || !rocket.alive) return;
+  const alt = getAltitude();
+  if(alt > 50000){
+    toast('Слишком высоко для парашюта!','fail');
+    return;
+  }
+  parachuteDeployed = true;
+  toast('🪂 Парашют раскрыт','ok');
+}
+
+function nextStage(){
+  if(!rocket || !rocket.alive) return;
+  // Отделяем нижнюю ступень (первый двигатель + баки над ним)
+  let cutIdx = -1;
+  for(let i=0;i<rocket.parts.length;i++){
+    const p = rocket.parts[i];
+    if(p.type==='engine' && p.fuel<=0){
+      cutIdx = i;
+      break;
+    }
+  }
+  if(cutIdx>=0){
+    rocket.parts.splice(0, cutIdx+1);
+    rocket.stage++;
+    toast('⬆ Ступень '+rocket.stage,'ok');
+  } else {
+    toast('Нечего отделять','');
+  }
+}
+
+function setTime(t){
+  timeScale = t;
+  document.querySelectorAll('.time-btn').forEach(b=>b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+// ===== ФИЗИКА =====
+function getAltitude(){
+  if(!rocket) return 0;
+  const r = Math.sqrt(rocket.x*rocket.x + rocket.y*rocket.y);
+  return Math.max(0, r - EARTH.radius);
+}
+
+function getAtmosphereDensity(alt){
+  if(alt > EARTH.atmosphere) return 0;
+  // Барометрическая формула
+  return 1.225 * Math.exp(-alt/8500);
+}
+
+function updatePhysics(dt){
+  if(!rocket || !rocket.alive) return;
+  
+  const scaledDt = dt * timeScale;
+  
+  // Управление поворотом
+  let turnInput = 0;
+  if(keys['a']||keys['arrowleft']||keys['m_left']) turnInput -= 1;
+  if(keys['d']||keys['arrowright']||keys['m_right']) turnInput += 1;
+  rocket.angularVel += turnInput * 0.3 * scaledDt;
+  rocket.angularVel *= 0.95; // затухание
+  rocket.angle += rocket.angularVel * scaledDt;
+  
+  // Тяга
+  let totalThrust = 0;
+  let totalFuelRate = 0;
+  let hasFuel = false;
+  rocket.parts.forEach(p=>{
+    if(p.type==='engine' && p.thrust){
+      totalThrust += p.thrust;
+      // Расход топлива: ṁ = F / (Isp * g0)
+      totalFuelRate += p.thrust / (p.isp * EARTH.g0);
+    }
+    if(p.type==='tank' && p.fuel>0) hasFuel = true;
+  });
+  
+  let currentThrust = 0;
+  const thrusting = (keys['w']||keys['arrowup']||keys['m_fire']) && throttle>0;
+  
+  if(thrusting && hasFuel){
+    currentThrust = totalThrust * (throttle/100);
+    let fuelNeeded = totalFuelRate * (throttle/100) * scaledDt;
+    // Расход из всех баков пропорционально
+    const totalFuel = rocket.parts.filter(p=>p.type==='tank').reduce((s,p)=>s+p.fuel,0);
+    if(totalFuel>0){
+      rocket.parts.forEach(p=>{
+        if(p.type==='tank' && p.fuel>0 && fuelNeeded>0){
+          const share = (p.fuel/totalFuel) * fuelNeeded;
+          const use = Math.min(p.fuel, share);
+          p.fuel -= use;
+          fuelNeeded -= use;
+        }
+      });
+    }
+  }
+  
+  // Текущая масса
+  rocket.mass = rocket.parts.reduce((s,p)=>s+p.mass+(p.fuel||0),0);
+  
+  // Гравитация (закон Ньютона)
+  const r = Math.sqrt(rocket.x*rocket.x + rocket.y*rocket.y);
+  const gForce = G_CONST * EARTH.mass / (r*r);
+  const ax_grav = -gForce * (rocket.x/r);
+  const ay_grav = -gForce * (rocket.y/r);
+  
+  // Тяга (вдоль оси ракеты)
+  let ax_thrust = 0, ay_thrust = 0;
+  if(currentThrust>0 && rocket.mass>0){
+    const a = currentThrust / rocket.mass;
+    ax_thrust = a * Math.cos(rocket.angle);
+    ay_thrust = a * Math.sin(rocket.angle);
+  }
+  
+  // Атмосферное сопротивление
+  const alt = getAltitude();
+  const rho = getAtmosphereDensity(alt);
+  const speed = Math.sqrt(rocket.vx*rocket.vx + rocket.vy*rocket.vy);
+  let ax_drag = 0, ay_drag = 0;
+  if(rho>0 && speed>0){
+    const Cd = 0.3; // коэффициент сопротивления
+    const A = 2; // площадь сечения, м²
+    const dragForce = 0.5 * rho * speed * speed * Cd * A;
+    ax_drag = -dragForce * (rocket.vx/speed) / rocket.mass;
+    ay_drag = -dragForce * (rocket.vy/speed) / rocket.mass;
+  }
+  
+  // Парашют
+  if(parachuteDeployed && alt<50000 && speed>5){
+    const chuteDrag = 500 * speed / rocket.mass; // большое сопротивление
+    ax_drag -= chuteDrag * (rocket.vx/speed);
+    ay_drag -= chuteDrag * (rocket.vy/speed);
+  }
+  
+  // Суммарное ускорение
+  const ax = ax_grav + ax_thrust + ax_drag;
+  const ay = ay_grav + ay_thrust + ay_drag;
+  
+  // Сохраняем старую скорость для расчёта G
+  const oldVx = rocket.vx, oldVy = rocket.vy;
+  
+  // Интегрирование (метод Эйлера, для простоты)
+  rocket.vx += ax * scaledDt;
+  rocket.vy += ay * scaledDt;
+  rocket.x += rocket.vx * scaledDt;
+  rocket.y += rocket.vy * scaledDt;
+  
+  // Перегрузка
+  const dvx = rocket.vx - oldVx, dvy = rocket.vy - oldVy;
+  rocket.gForce = Math.sqrt(dvx*dvx + dvy*dvy) / (EARTH.g0 * scaledDt) + 1;
+  
+  // Максимальная высота
+  rocket.maxAlt = Math.max(rocket.maxAlt, alt);
+  
+  // Столкновение с Землёй
+  if(r < EARTH.radius){
+    const impactSpeed = speed;
+    if(impactSpeed > 10 && !parachuteDeployed){
+      rocket.alive = false;
+      toast('💥 КРУШЕНИЕ! Скорость: '+impactSpeed.toFixed(0)+' м/с','fail');
+      setTimeout(showBuilder, 2500);
+    } else if(impactSpeed > 5 && parachuteDeployed){
+      rocket.alive = false;
+      toast('💥 Парашют не помог...','fail');
+      setTimeout(showBuilder, 2500);
+    } else {
+      // Мягкая посадка
+      rocket.vx = 0; rocket.vy = 0;
+      rocket.x = (rocket.x/r) * EARTH.radius;
+      rocket.y = (rocket.y/r) * EARTH.radius;
+      if(rocket.maxAlt > 100000){
+        toast('✅ МЯГКАЯ ПОСАДКА! Макс. высота: '+(rocket.maxAlt/1000).toFixed(1)+' км','ok');
+      }
+    }
+  }
+  
+  // Телеметрия
+  updateHUD(alt, speed, r);
+}
+
+function updateHUD(alt, speed, r){
+  document.getElementById('h-alt').textContent = alt<1000 ? alt.toFixed(0)+' м' : (alt/1000).toFixed(2)+' км';
+  document.getElementById('h-vel').textContent = speed.toFixed(1)+' м/с';
+  
+  // Орбитальные параметры (упрощённо)
+  const mu = G_CONST * EARTH.mass;
+  const energy = 0.5*speed*speed - mu/r;
+  const h = r * speed * Math.abs(Math.sin(Math.atan2(rocket.vy,rocket.vx) - Math.atan2(rocket.y,rocket.x)));
+  
+  if(energy < 0 && h>0){
+    const a = -mu/(2*energy); // большая полуось
+    const e = Math.sqrt(1 - (h*h)/(a*mu)); // эксцентриситет
+    const ap = a*(1+e) - EARTH.radius;
+    const pe = a*(1-e) - EARTH.radius;
+    const apEl = document.getElementById('h-ap');
+    const peEl = document.getElementById('h-pe');
+    apEl.textContent = ap<1000 ? ap.toFixed(0)+' м' : (ap/1000).toFixed(1)+' км';
+    peEl.textContent = pe<1000 ? pe.toFixed(0)+' м' : (pe/1000).toFixed(1)+' км';
+    apEl.className = 'hud-val' + (ap<100000?' warn':'');
+    peEl.className = 'hud-val' + (pe<0?' danger':pe<100000?' warn':' ok');
+  } else {
+    document.getElementById('h-ap').textContent = '—';
+    document.getElementById('h-pe').textContent = '—';
+  }
+  
+  // TWR
+  let thrust = 0;
+  rocket.parts.forEach(p=>{if(p.type==='engine') thrust+=p.thrust;});
+  const twr = rocket.mass>0 ? thrust/(rocket.mass*EARTH.g0) : 0;
+  const twrEl = document.getElementById('h-twr');
+  twrEl.textContent = twr.toFixed(2);
+  twrEl.className = 'hud-val' + (twr<1?' danger':twr>3?' warn':' ok');
+  
+  document.getElementById('h-mass').textContent = rocket.mass.toFixed(0)+' кг';
+  
+  const fuel = rocket.parts.filter(p=>p.type==='tank').reduce((s,p)=>s+p.fuel,0);
+  const maxFuel = rocket.parts.filter(p=>p.type==='tank').reduce((s,p)=>s+(PARTS[Object.keys(PARTS).find(k=>PARTS[k].name===p.name)]?.fuel||p.fuel),0);
+  const fuelPct = maxFuel>0 ? (fuel/maxFuel)*100 : 0;
+  const fuelEl = document.getElementById('h-fuel');
+  fuelEl.textContent = fuelPct.toFixed(1)+'%';
+  fuelEl.className = 'hud-val' + (fuelPct<20?' danger':fuelPct<50?' warn':'');
+  
+  // Δv (оставшийся)
+  const dryMass = rocket.mass - fuel;
+  const dv = fuel>0 && dryMass>0 ? 310*9.81*Math.log(rocket.mass/dryMass) : 0;
+  document.getElementById('h-dv').textContent = dv.toFixed(0)+' м/с';
+  
+  const gEl = document.getElementById('h-g');
+  gEl.textContent = rocket.gForce.toFixed(1);
+  gEl.className = 'hud-val' + (rocket.gForce>6?' danger':rocket.gForce>3?' warn':'');
+  
+  document.getElementById('h-stage').textContent = rocket.stage;
+}
+
+// ===== ОТРИСОВКА =====
+function draw(){
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0,W,H);
+  
+  // Динамический зум
+  if(rocket){
+    const alt = getAltitude();
+    let targetZoom;
+    if(alt < 10000) targetZoom = 1.5e-5;
+    else if(alt < 100000) targetZoom = 5e-6;
+    else if(alt < 1000000) targetZoom = 1e-6;
+    else targetZoom = 2e-7;
+    camera.zoom += (targetZoom - camera.zoom) * 0.05;
+    camera.x += (rocket.x - camera.x) * 0.1;
+    camera.y += (rocket.y - camera.y) * 0.1;
+  }
+  
+  ctx.save();
+  ctx.translate(W/2, H/2);
+  ctx.scale(camera.zoom, camera.zoom);
+  ctx.translate(-camera.x, -camera.y);
+  
+  // Звёзды
+  stars.forEach(s=>{
+    const sx = s.x, sy = s.y;
+    // Параллакс не нужен — звёзды бесконечно далеко
+    ctx.fillStyle = `rgba(255,255,255,${s.brightness})`;
+    ctx.fillRect(sx, sy, s.size/camera.zoom, s.size/camera.zoom);
+  });
+  
+  // Траектория (предсказание)
+  if(rocket && rocket.alive) drawTrajectory();
+  
+  // Земля
+  drawPlanet(EARTH, 0, 0);
+  
+  // Луна (орбитальная)
+  const moonAngle = (performance.now()/1000) * 0.0001; // медленное движение
+  const moonX = Math.cos(moonAngle) * MOON.distance;
+  const moonY = Math.sin(moonAngle) * MOON.distance;
+  drawPlanet(MOON, moonX, moonY);
+  
+  // Ракета
+  if(rocket) drawRocket();
+  
+  ctx.restore();
+}
+
+function drawPlanet(pl, px, py){
+  // Атмосфера
+  if(pl.atmosphere>0){
+    const atmosR = pl.radius + pl.atmosphere;
+    const grad = ctx.createRadialGradient(px,py,pl.radius,px,py,atmosR);
+    grad.addColorStop(0,'rgba(100,180,255,0.3)');
+    grad.addColorStop(1,'rgba(100,180,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(px,py,atmosR,0,Math.PI*2);
+    ctx.fill();
+  }
+  
+  // Тело планеты
+  const grad = ctx.createRadialGradient(px-pl.radius*0.3, py-pl.radius*0.3, 0, px, py, pl.radius);
+  grad.addColorStop(0, lightenColor(pl.color, 40));
+  grad.addColorStop(1, pl.color);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(px, py, pl.radius, 0, Math.PI*2);
+  ctx.fill();
+  
+  // Детали (континенты для Земли)
+  if(pl.name==='Земля'){
+    ctx.fillStyle = 'rgba(34,120,60,0.6)';
+    ctx.beginPath();
+    ctx.arc(px-pl.radius*0.3, py-pl.radius*0.2, pl.radius*0.25, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(px+pl.radius*0.4, py+pl.radius*0.3, pl.radius*0.2, 0, Math.PI*2);
+    ctx.fill();
+  }
+  
+  // Кратеры для Луны
+  if(pl.name==='Луна'){
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.arc(px-pl.radius*0.3, py-pl.radius*0.3, pl.radius*0.15, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px+pl.radius*0.4, py+pl.radius*0.2, pl.radius*0.1, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+function drawRocket(){
+  if(!rocket) return;
+  
+  ctx.save();
+  ctx.translate(rocket.x, rocket.y);
+  ctx.rotate(rocket.angle);
+  
+  // Масштаб отображения ракеты (чтобы её было видно)
+  const rocketScale = 1; // реальный масштаб
+  
+  // Пламя
+  const thrusting = (keys['w']||keys['arrowup']||keys['m_fire']) && throttle>0;
+  const hasFuel = rocket.parts.some(p=>p.type==='tank' && p.fuel>0);
+  if(thrusting && hasFuel){
+    const flameLen = 30 + Math.random()*20;
+    const grad = ctx.createLinearGradient(0,0,0,flameLen);
+    grad.addColorStop(0,'#ffffaa');
+    grad.addColorStop(0.3,'#ffaa44');
+    grad.addColorStop(1,'rgba(255,50,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(-8, 0);
+    ctx.lineTo(0, flameLen);
+    ctx.lineTo(8, 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+  
+  // Детали (снизу вверх)
+  let yPos = 0;
+  rocket.parts.forEach(p=>{
+    const w = p.width * 10; // масштаб для видимости
+    const h = p.height * 10;
+    
+    if(p.type==='nose'){
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.moveTo(-w/2, yPos);
+      ctx.lineTo(0, yPos-h);
+      ctx.lineTo(w/2, yPos);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle='#fff';
+      ctx.lineWidth=1;
+      ctx.stroke();
+    } else if(p.type==='engine'){
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-w/2, yPos-h, w, h);
+      ctx.strokeStyle='#fff';
+      ctx.strokeRect(-w/2, yPos-h, w, h);
+      // Сопло
+      ctx.fillStyle='#111';
+      ctx.beginPath();
+      ctx.moveTo(-w*0.3, yPos);
+      ctx.lineTo(0, yPos+h*0.5);
+      ctx.lineTo(w*0.3, yPos);
+      ctx.closePath();
+      ctx.fill();
+    } else if(p.type==='chute'){
+      if(parachuteDeployed){
+        // Раскрытый парашют
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(0, yPos-30, w*1.5, Math.PI, 0);
+        ctx.fill();
+        ctx.strokeStyle='#888';
+        ctx.beginPath();
+        ctx.moveTo(-w*1.5, yPos-30);
+        ctx.lineTo(0, yPos);
+        ctx.moveTo(w*1.5, yPos-30);
+        ctx.lineTo(0, yPos);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-w/2, yPos-h, w, h);
+      }
+    } else {
+      // Бак
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-w/2, yPos-h, w, h);
+      ctx.strokeStyle='#888';
+      ctx.strokeRect(-w/2, yPos-h, w, h);
+      // Уровень топлива
+      if(p.fuel && p.fuel>0){
+        const maxF = PARTS[Object.keys(PARTS).find(k=>PARTS[k].name===p.name)]?.fuel || p.fuel;
+        const ratio = p.fuel/maxF;
+        ctx.fillStyle='rgba(68,136,204,0.6)';
+        ctx.fillRect(-w/2+2, yPos-h+2, w-4, (h-4)*ratio);
+      }
+    }
+    yPos -= h;
+  });
+  
+  ctx.restore();
+}
+
+function drawTrajectory(){
+  ctx.strokeStyle = 'rgba(100,200,255,0.4)';
+  ctx.setLineDash([10/camera.zoom, 10/camera.zoom]);
+  ctx.lineWidth = 2/camera.zoom;
+  ctx.beginPath();
+  
+  let simX = rocket.x, simY = rocket.y;
+  let simVx = rocket.vx, simVy = rocket.vy;
+  let simMass = rocket.mass;
+  let simFuel = rocket.parts.filter(p=>p.type==='tank').reduce((s,p)=>s+p.fuel,0);
+  
+  let totalThrust = 0, totalFuelRate = 0;
+  rocket.parts.forEach(p=>{
+    if(p.type==='engine'){
+      totalThrust += p.thrust;
+      totalFuelRate += p.thrust/(p.isp*EARTH.g0);
+    }
+  });
+  
+  ctx.moveTo(simX, simY);
+  const simDt = 10; // шаг симуляции
+  const steps = 300;
+  
+  for(let i=0;i<steps;i++){
+    const r = Math.sqrt(simX*simX + simY*simY);
+    if(r < EARTH.radius) break;
+    
+    const g = G_CONST*EARTH.mass/(r*r);
+    let ax = -g*(simX/r);
+    let ay = -g*(simY/r);
+    
+    // Тяга (если есть топливо и нажата W в реальности — но для прогноза считаем текущую тягу)
+    if(throttle>0 && simFuel>0){
+      const thrust = totalThrust*(throttle/100);
+      const fuelUse = totalFuelRate*(throttle/100)*simDt;
+      simFuel -= fuelUse;
+      if(simFuel<0) simFuel=0;
+      if(thrust>0 && simMass>0){
+        ax += (thrust/simMass)*Math.cos(rocket.angle);
+        ay += (thrust/simMass)*Math.sin(rocket.angle);
+      }
+    }
+    
+    simVx += ax*simDt;
+    simVy += ay*simDt;
+    simX += simVx*simDt;
+    simY += simVy*simDt;
+    simMass = rocket.parts.reduce((s,p)=>s+p.mass+(p.type==='tank'?Math.max(0,p.fuel-(totalFuelRate*(throttle/100)*simDt*(i+1)/steps)):0),0);
+    
+    ctx.lineTo(simX, simY);
+  }
+  
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function lightenColor(hex, amt){
+  let r = parseInt(hex.slice(1,3),16);
+  let g = parseInt(hex.slice(3,5),16);
+  let b = parseInt(hex.slice(5,7),16);
+  r = Math.min(255, r+amt);
+  g = Math.min(255, g+amt);
+  b = Math.min(255, b+amt);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ===== ИГРОВОЙ ЦИКЛ =====
+let lastTime = 0;
+function gameLoop(time){
+  if(!flightActive) return;
+  const dt = Math.min((time-lastTime)/1000, 0.1);
+  lastTime = time;
+  
+  updatePhysics(dt);
+  draw();
+  
+  requestAnimationFrame(gameLoop);
+}
+
+// ===== ВВОД =====
+window.addEventListener('keydown', e=>{
+  keys[e.key.toLowerCase()] = true;
+  if(e.key===' ') { e.preventDefault(); nextStage(); }
+  if(e.key.toLowerCase()==='r' && flightActive) abortFlight();
+  if(e.key.toLowerCase()==='p') deployParachute();
+});
+window.addEventListener('keyup', e=>keys[e.key.toLowerCase()] = false);
+
+document.getElementById('throttle-slider').addEventListener('input', e=>{
+  throttle = parseInt(e.target.value);
+  document.getElementById('throttle-pct').textContent = throttle+'%';
+});
+
+// Мобильное управление
+function setupMobile(id, key){
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e=>{e.preventDefault(); keys[key]=true;});
+  el.addEventListener('touchend', e=>{e.preventDefault(); keys[key]=false;});
+  el.addEventListener('mousedown', e=>{keys[key]=true;});
+  el.addEventListener('mouseup', e=>{keys[key]=false;});
+}
+setupMobile('m-left','m_left');
+setupMobile('m-right','m_right');
+setupMobile('m-fire','m_fire');
+
+// Колёсико мыши — зум
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  camera.zoom *= e.deltaY>0 ? 0.9 : 1.1;
+  camera.zoom = Math.max(1e-8, Math.min(1e-3, camera.zoom));
+});
+
+// Инициализация
+updateBuilderStats();
+drawBuilderRocket();
+</script>
+</body>
+</html>
